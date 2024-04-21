@@ -5,8 +5,11 @@ import com.Bank2.Bank2.Dtos.AccTransactionDTO;
 import com.Bank2.Bank2.Dtos.CustDetAddressDTO;
 import com.Bank2.Bank2.Dtos.TransResponse;
 import com.Bank2.Bank2.Entities.*;
+import com.Bank2.Bank2.Exception.CustomErrorResponse;
 import com.Bank2.Bank2.Exception.IdNotFoundException;
+import com.Bank2.Bank2.Exception.InsufficientBalanceException;
 import com.Bank2.Bank2.Repository.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Service
+@Slf4j
 public class CustomerService {
     @Autowired
     AccBalanceRepo accBalanceRepo;
@@ -30,6 +34,7 @@ public class CustomerService {
     AddressRepo addressRepo;
     @Autowired
     DetailRepo detailRepo;
+
 
     public CustDetAddressDTO addCustomer(CustDetAddressDTO custDetAddress) {
         GenerateRandom gr = new GenerateRandom();
@@ -90,74 +95,76 @@ public class CustomerService {
         custMapRepo.delete(cm);
     }
 
-    public List<Cust_Details> getCustDetails() {
+    public ResponseEntity<Object> getCustDetails() {
         List<Cust_Details> det = detailRepo.findAll();
-        List<Cust_Details> mainone = new ArrayList<>();
-        for (Cust_Details ctd : det) {
-            Cust_Details custdet = new Cust_Details();
-            custdet.setCust_Id(ctd.getCust_Id());
-            custdet.setName(ctd.getName());
-            custdet.setEmail(ctd.getEmail());
-            custdet.setPhone(ctd.getPhone());
-            custdet.setCreated(ctd.getCreated());
-            custdet.setLastUpdated(ctd.getLastUpdated());
-            mainone.add(custdet);
+        if(det.isEmpty())
+        {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new CustomErrorResponse("Not found any details","HCT400"));
         }
-        return mainone;
+        return ResponseEntity.ok(det);
     }
 
-    public List<Cust_Address> getCustAddress() {
+    public ResponseEntity<Object> getCustAddress() {
         List<Cust_Address> ca = addressRepo.findAll();
-        List<Cust_Address> caa = new ArrayList<>();
-        for (Cust_Address custadd : ca) {
-            Cust_Address cc = new Cust_Address();
-            cc.setAddress_Id(custadd.getAddress_Id());
-            cc.setPin(custadd.getPin());
-            cc.setAddress_Lane(custadd.getAddress_Lane());
-            cc.setCity(custadd.getCity());
-            cc.setCountry(custadd.getCountry());
-            cc.setLastUpdate(custadd.getLastUpdate());
-            caa.add(cc);
+        if(ca.isEmpty())
+        {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new CustomErrorResponse(
+                    "Not Found","HCT400"));
         }
-        return caa;
+        return ResponseEntity.ok(ca);
     }
 
     public CustDetAddressDTO updateCustomer(Long custId, CustDetAddressDTO custDetAddress) {
-        // Retrieve the customer details from the database
         Cust_Details custDetails = detailRepo.findById(custId)
                 .orElseThrow(() -> new RuntimeException("Customer not found"));
 
-        // Update customer details with the new data from the request
         custDetails.setName(custDetAddress.getName());
         custDetails.setPhone(custDetAddress.getPhone());
         custDetails.setEmail(custDetAddress.getEmail());
 
-        // Retrieve the associated address details from the customer
         Cust_Address custAddress = custDetails.getCustAddress();
 
-        // Update address details with the new data from the request
         custAddress.setCountry(custDetAddress.getCountry());
         custAddress.setCity(custDetAddress.getCity());
         custAddress.setAddress_Lane(custDetAddress.getAddressLane());
         custAddress.setPin(custDetAddress.getPin());
 
-        // Save the updated customer details and address details
         detailRepo.save(custDetails);
         addressRepo.save(custAddress);
         return custDetAddress;
     }
 
-    public AccBalance getbalance(long accId) {
-        return accBalanceRepo.findById(accId).get();
+    public ResponseEntity<Object> getbalance(long accId) {
+        Optional<AccBalance> acc = accBalanceRepo.findById(accId);
+        if (acc.isPresent()) {
+            return ResponseEntity.ok(acc.get());
+        } else {
+            String errorMessage = "The id is not present";
+            String reasonCode = "HCT400";
+            CustomErrorResponse errorResponse = new CustomErrorResponse();
+            errorResponse.setErrorMessage(errorMessage);
+            errorResponse.setReasonCode(reasonCode);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        }
     }
 
-    public AccBalance findByCustId(Long custId) {
-        Cust_Details custDetails = detailRepo.findById(custId).get();
-        CustMap custMap = custDetails.getCustMap();
-        return custMap.getAccBalance();
+    public ResponseEntity<Object> findByCustId(Long custId) {
+        Optional<Cust_Details> custDetails = detailRepo.findById(custId);
+        if(custDetails.isPresent()) {
+            CustMap custMap = custDetails.get().getCustMap();
+            return ResponseEntity.ok(custMap.getAccBalance());
+        }
+        else {
+            String errorMessage = "The id is not present";
+            String reasonCode = "HCT400";
+            CustomErrorResponse errorResponse = new CustomErrorResponse();
+            errorResponse.setErrorMessage(errorMessage);
+            errorResponse.setReasonCode(reasonCode);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        }
     }
 
-    public ResponseEntity<?> createTrans(Trans trans) {
+    public ResponseEntity<Object> createTrans(Trans trans) {
         GenerateRandom gr = new GenerateRandom();
         long rid = gr.getRandom();
 
@@ -178,8 +185,9 @@ public class CustomerService {
         ac2.setCredit(amount);
         ac2.setDebit(0.0);
         ac2.setLastUpdate(td);
-        Optional<AccBalance> send = accBalanceRepo.findById(accId);
+
         try {
+            Optional<AccBalance> send = accBalanceRepo.findById(accId);
             if (send.isPresent()) {
                 AccBalance sends = send.get();
                 double availBal = sends.getBalance();
@@ -188,14 +196,15 @@ public class CustomerService {
                     ac1.setAvailBalance(sends.getBalance());
                     AccBalance abs = accBalanceRepo.save(sends);
                     ac1.setAccBalance(abs);
+                } else {
+                    throw new InsufficientBalanceException("Insufficient balance in sender's account", "HCT403");
                 }
             } else {
-                throw new IdNotFoundException("PLEASE", "HELP");
+                throw new IdNotFoundException("Sender account ID not found", "HCT404");
             }
-        }catch (IdNotFoundException e){
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("message : "+e.getMessage()+"\n" +" reason code : "+e.getReason());
-        }
-            AccBalance reciever = accBalanceRepo.findById(toAccId).get();
+
+            AccBalance reciever = accBalanceRepo.findById(toAccId).orElseThrow(() ->
+                    new IdNotFoundException("Receiver account ID not found", "HCT404"));
             double rbal = reciever.getBalance();
             reciever.setBalance(rbal + amount);
             ac2.setAvailBalance(reciever.getBalance());
@@ -205,13 +214,25 @@ public class CustomerService {
             accTransRepo.save(ac1);
             accTransRepo.save(ac2);
 
-        return ResponseEntity.ok(new TransResponse("Transaction Success", "HCT200", rid));
+            return ResponseEntity.ok(new TransResponse("Transaction Success", "HCT200", rid));
+        } catch (IdNotFoundException | InsufficientBalanceException e) {
+            String errorMessage = "Exception has occurred";
+            String reasonCode = "HCT400";
+            CustomErrorResponse errorResponse = new CustomErrorResponse();
+            errorResponse.setErrorMessage(errorMessage);
+            errorResponse.setReasonCode(reasonCode);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        }
     }
 
-    public List<AccTransactionDTO> getbyacc(AccBalance accBalance) {
-        List<AccTransactionDTO> ar = new ArrayList<>();
-        List<AccTransacions> lis = accTransRepo.findByaccBalance(accBalance);
 
+    public ResponseEntity<Object> getbyacc(Long accBalance) {
+        List<AccTransactionDTO> ar = new ArrayList<>();
+        List<AccTransacions> lis = accTransRepo.findByAccBalanceAccId(accBalance);
+        if (lis.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new CustomErrorResponse("No transactions found for the provided account balance", "HCT404"));
+        }
         for (AccTransacions abd : lis) {
             AccTransactionDTO ad = new AccTransactionDTO();
             ad.setTransactionId(abd.getTransactionId());
@@ -223,13 +244,16 @@ public class CustomerService {
             ad.setAvailBalance(abd.getAvailBalance());
             ar.add(ad);
         }
-        return ar;
+        return ResponseEntity.ok(ar);
     }
 
-    public List<AccTransactionDTO> getbyref(Long transRefId) {
+    public ResponseEntity<Object> getbyref(Long transRefId) {
         List<AccTransactionDTO> ad = new ArrayList<>();
         List<AccTransacions> ref = accTransRepo.findBytransRefId(transRefId);
-
+        if (ref.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new CustomErrorResponse("No transactions found for the provided reference ID", "HCT404"));
+        }
         for (AccTransacions a : ref) {
             AccTransactionDTO at = new AccTransactionDTO();
             at.setTransactionId(a.getTransactionId());
@@ -241,24 +265,26 @@ public class CustomerService {
             at.setAvailBalance(a.getAvailBalance());
             ad.add(at);
         }
-        return ad;
+        return ResponseEntity.ok(ad);
     }
 
-    public List<AccTransactionDTO> getbyrefacc(Long transRefId, AccBalance accBalance) {
-        List<AccTransactionDTO> l = new ArrayList<>();
-        List<AccTransacions> at = accTransRepo.findByTransRefIdAndAccBalance(transRefId, accBalance);
-        for (AccTransacions aa : at) {
-            AccTransactionDTO atd = new AccTransactionDTO();
-            atd.setTransactionId(aa.getTransactionId());
-            atd.setTransRefId(aa.getTransRefId());
-            atd.setCredit(aa.getCredit());
-            atd.setDebit(aa.getDebit());
-            atd.setLastUpdate(aa.getLastUpdate());
-            atd.setAccId(aa.getAccBalance().getAccId());
-            atd.setAvailBalance(aa.getAvailBalance());
-            l.add(atd);
+    public ResponseEntity<Object> getbyrefacc(Long transRefId, Long accBalance) {
+        Optional<AccTransacions> at = accTransRepo.findByTransRefIdAndAccBalance_AccId(transRefId, accBalance);
+        if (at.isPresent()) {
+            AccTransactionDTO dto = new AccTransactionDTO();
+            AccTransacions act = at.get();
+            dto.setTransactionId(act.getTransactionId());
+            dto.setTransRefId(act.getTransRefId());
+            dto.setCredit(act.getCredit());
+            dto.setDebit(act.getDebit());
+            dto.setAvailBalance(act.getAvailBalance());
+            dto.setAccId(act.getAccBalance().getAccId());
+            dto.setLastUpdate(act.getLastUpdate());
+            return ResponseEntity.ok(act);
+        } else {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new CustomErrorResponse("No transactions found for the provided reference ID and account balance", "HCT404"));
         }
-        return l;
     }
 }
 
