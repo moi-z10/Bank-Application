@@ -77,23 +77,8 @@ public class CustomerService {
         return custDetAddress;
     }
 
-    public void deleteCustomer(Long Cust_Id) {
-        Cust_Details det = detailRepo.findById(Cust_Id).get();
-        Cust_Address address = det.getCustAddress();
-        addressRepo.delete(address);
-        detailRepo.delete(det);
-    }
 
-    public void del(long id) {
-        CustMap cm = custMapRepo.findById(id).get();
-        Cust_Details cd = cm.getCustDetails();
-        Cust_Address ca = cd.getCustAddress();
-        AccBalance ab = cm.getAccBalance();
-        addressRepo.delete(ca);
-        detailRepo.delete(cd);
-        accBalanceRepo.delete(ab);
-        custMapRepo.delete(cm);
-    }
+
 
     public ResponseEntity<Object> getCustDetails() {
         List<Cust_Details> det = detailRepo.findAll();

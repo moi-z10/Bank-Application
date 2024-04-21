@@ -16,6 +16,7 @@ import java.util.List;
 
 @RestController
 @Slf4j
+@RequestMapping("/hctbank")
 public class CustomerController {
     @Autowired
     CustomerService customerService;
@@ -24,25 +25,12 @@ public class CustomerController {
         this.customerService = customerService;
     }
 
-    @PostMapping("/post")
+    @PostMapping("/customers")
     public ResponseEntity<CustDetAddressDTO> addCustomer(@RequestBody CustDetAddressDTO custDetAddress) {
         return new ResponseEntity<>(customerService.addCustomer(custDetAddress), HttpStatus.CREATED);
     }
 
-    @DeleteMapping("/del/{id}")
-    public ResponseEntity<String> deleteCustomer(@PathVariable("id") Long Cust_Id) {
-        customerService.deleteCustomer(Cust_Id);
-        return new ResponseEntity<>("Has been successfully deleted", HttpStatus.OK);
-    }
-
-    @DeleteMapping("/custmap/{id}")
-    public ResponseEntity<String> del(@PathVariable("id") long id) {
-        customerService.del(id);
-        return new ResponseEntity<>("Has been successfully deleted", HttpStatus.OK);
-
-    }
-
-    @GetMapping("/getdetails")
+    @GetMapping("/customers")
     public Object getCustomerDetails() {
         return customerService.getCustDetails();
     }
@@ -69,7 +57,7 @@ public class CustomerController {
 
     }
 
-    @PostMapping("/trans")
+    @PostMapping("/transactions")
     public ResponseEntity<Object> createTrans(@RequestBody Trans trans) {
         return customerService.createTrans(trans);
     }
